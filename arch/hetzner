@@ -1,20 +1,22 @@
 #!/usr/bin/env sh
 
-
 ########################################
+
 # Config:
 
-keyboard_layout="be-latin1"
+keymap="be-latin1"
 target_device="/dev/sda"
+username=bert
+printf "Password for user $username: " && read password
+hostname=hai
+timezone=UTC
+language_territory=en_US
+charset=UTF-8
 
 ########################################
 
-# Prerequisites
-which loadkeys > /dev/null 2>&1 || echo "Error: command 'loadkeys' not found" >&2 && return
-which sfdisk > /dev/null 2>&1 || echo "Error: command 'sfdisk' not found" >&2 && return
-
 # Set KB layout
-[ -n "keyboard_layout" ] && loadkeys "$keyboard_layout"
+[ -n "$keymap" ] && loadkeys "$keymap"
 
 # Exit if no internet connection
 ping -c 1 -W 1 8.8.8.8 > /dev/null 2>&1 || return
@@ -22,13 +24,57 @@ ping -c 1 -W 1 8.8.8.8 > /dev/null 2>&1 || return
 # Synchronize the system clock with NTP
 timedatectl set-ntp true
 
-echo TEST
-
 # Partition target device
-# sfdisk --label gpt --wipe always --wipe-partitions always "$target_device" << EOF
-# size=32M,type=U
-# type=83
-# EOF
-#
-#
-#
+sfdisk --label gpt --wipe always --wipe-partitions always "$target_device" << EOF
+size=32M,type=U
+type=L
+EOF
+
+# Format partitions
+mkfs.fat -F 16 "${target_device}1"
+mkfs.ext4 "${target_device}2"
+
+# Mount the root partition :
+mount /dev/sda2 /mnt
+
+# Install the 'base' package group :
+pacstrap /mnt base sudo reflector
+
+# Create an fstab file :
+genfstab -U /mnt >> /mnt/etc/fstab
+
+# ‘chroot’ into the target filesystem
+cat << EOF | arch-chroot /mnt
+
+# Set timezone
+ln -sf "/usr/share/zoneinfo/${timezone}" /etc/localtime
+
+# Use UTC on the hardware clock
+hwclock --systohc --utc
+
+# Set the locale
+echo "${language_territory}${charset} ${charset}" > /etc/locale.gen
+locale-gen
+echo LANG=${language_territory}.${charset} > /etc/locale.conf
+
+# Set the keyboard layout
+echo KEYMAP="$keymap" > /etc/vconsole.conf
+
+# Set the hostname
+echo "$hostname" > /etc/hostname
+
+# Set hostname as an alias for localhost
+echo "127.0.0.1 $hostname.localdomain $hostname" >> /etc/hosts
+
+# Add a non-root user, with ‘sudo’ rights
+groupadd sudoers
+useradd -G sudoers -m "$username" -p "$(openssl passwd -1 "$password")"
+echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
+
+# Update & sort mirrorlist
+reflector --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+
+# Install some necessary packages:
+pacman -Syu grub git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd
+
+EOF
