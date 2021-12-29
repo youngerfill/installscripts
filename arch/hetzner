@@ -46,7 +46,7 @@ mkfs.ext4 "${target_device}2"
 mount "${target_device}2" /mnt
 
 # Install the 'base' package group :
-pacstrap /mnt base sudo reflector openssh 
+pacstrap /mnt base sudo reflector
 
 # Create an fstab file :
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -84,6 +84,9 @@ groupadd sudoers
 useradd -G sudoers -m "$username" -p "$(openssl passwd -1 "$password")"
 echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 
+# Install some necessary packages:
+pacman -Syu --noconfirm grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh hknockd
+
 # Enable ssh login with pubkey
 cat << SSHDCFG > /etc/ssh/sshd_config
 LogLevel VERBOSE
@@ -115,6 +118,8 @@ SYSLOGIN
 # Disabled: takes too long
 # reflector --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
 
-# Install some necessary packages:
-pacman -Syu grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo knockd
+# Install grub
+# grub-install --target=i386-pc /dev/sda
+# sed -i "s/^GRUB_TIMEOUT=.*$/GRUB_TIMEOUT=0/" /etc/default/grub
+# grub-mkconfig -o /boot/grub/grub.cfg
 EOF
