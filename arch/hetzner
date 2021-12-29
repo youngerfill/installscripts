@@ -35,7 +35,7 @@ EOF
 mkfs.ext4 "${target_device}2"
 
 # Mount the root partition :
-mount /dev/sda2 /mnt
+mount "${target_device}2" /mnt
 
 # Install the 'base' package group :
 pacstrap /mnt base sudo reflector
