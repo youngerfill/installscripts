@@ -46,7 +46,7 @@ mkfs.ext4 "${target_device}2"
 mount "${target_device}2" /mnt
 
 # Install the 'base' package group :
-pacstrap /mnt base sudo reflector
+pacstrap /mnt base sudo reflector openssh 
 
 # Create an fstab file :
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -84,13 +84,6 @@ groupadd sudoers
 useradd -G sudoers -m "$username" -p "$(openssl passwd -1 "$password")"
 echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 
-# Update & sort mirrorlist
-# Disabled: takes too long
-# reflector --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-
-# Install some necessary packages:
-pacman -Syu grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd
-
 # Enable ssh login with pubkey
 cat << SSHDCFG > /etc/ssh/sshd_config
 LogLevel VERBOSE
@@ -111,4 +104,17 @@ if [ -n "$ssh_pubkey_file" ]; then
     chown $username:$username /home/$username/.ssh/authorized_keys
     chmod 600 /home/$username/.ssh/authorized_keys
 fi
+
+# Add 5s delay to failed login attempts
+cat << SYSLOGIN >> /etc/pam.d/system-login
+
+auth optional pam_faildelay.so delay=5000000
+SYSLOGIN
+
+# Update & sort mirrorlist
+# Disabled: takes too long
+# reflector --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+
+# Install some necessary packages:
+pacman -Syu grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo knockd
 EOF
