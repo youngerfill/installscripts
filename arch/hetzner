@@ -26,12 +26,12 @@ timedatectl set-ntp true
 
 # Partition target device
 sfdisk --label gpt --wipe always --wipe-partitions always "$target_device" << EOF
-size=32M,type=U
+size=2M,type=21686148-6449-6E6F-744E-656564454649
 type=L
 EOF
 
 # Format partitions
-mkfs.fat -F 16 "${target_device}1"
+# mkfs.fat -F 16 "${target_device}1"
 mkfs.ext4 "${target_device}2"
 
 # Mount the root partition :
