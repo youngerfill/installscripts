@@ -34,7 +34,7 @@ timedatectl set-ntp true
 
 # Partition target device
 sfdisk --label gpt --wipe always --wipe-partitions always "$target_device" << EOF
-size=32M,type=21686148-6449-6E6F-744E-656564454649
+size=2M,type=21686148-6449-6E6F-744E-656564454649
 type=L
 EOF
 
@@ -46,7 +46,7 @@ mkfs.ext4 "${target_device}2"
 mount "${target_device}2" /mnt
 
 # Install the 'base' package group :
-pacstrap /mnt base sudo
+pacstrap /mnt base linux linux-firmware sudo
 
 # Create an fstab file :
 genfstab -U /mnt >> /mnt/etc/fstab
