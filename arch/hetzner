@@ -12,8 +12,16 @@ hostname=hai
 timezone=UTC
 language_territory=en_US
 charset=UTF-8
+ssh_pubkey_file=
 
 ########################################
+
+if [ -n "$ssh_pubkey_file" ]; then
+    if [ ! -f "$ssh_pubkey_file" ]; then
+        echo "ERROR: file doesn't exist: $ssh_pubkey_file"
+        return
+    fi
+fi
 
 # Set KB layout
 [ -n "$keymap" ] && loadkeys "$keymap"
@@ -42,6 +50,11 @@ pacstrap /mnt base sudo reflector
 
 # Create an fstab file :
 genfstab -U /mnt >> /mnt/etc/fstab
+
+# Copy ssh pubkey file
+if [ -n "$ssh_pubkey_file" ]; then
+    cp "$ssh_pubkey_file" /mnt/root/ssh_pubkey
+fi
 
 # ‘chroot’ into the target filesystem
 cat << EOF | arch-chroot /mnt
@@ -78,4 +91,24 @@ echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 # Install some necessary packages:
 pacman -Syu grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd
 
+# Enable ssh login with pubkey
+cat << SSHDCFG > /etc/ssh/sshd_config
+LogLevel VERBOSE
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+AuthorizedKeysFile .ssh/authorized_keys
+ChallengeResponseAuthentication no
+UsePAM yes
+AllowUsers $username
+SSHDCFG
+
+# Put user's pubkey in the right place
+if [ -n "$ssh_pubkey_file" ]; then
+    su $username -c "mkdir -p /home/$username/.ssh"
+    chmod 700 "/home/$username/.ssh"
+    mv /root/ssh_pubkey /home/$username/.ssh/authorized_keys
+    chown $username:$username /home/$username/.ssh/authorized_keys
+    chmod 600 /home/$username/.ssh/authorized_keys
+fi
 EOF
