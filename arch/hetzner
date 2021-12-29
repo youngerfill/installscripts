@@ -34,7 +34,7 @@ timedatectl set-ntp true
 
 # Partition target device
 sfdisk --label gpt --wipe always --wipe-partitions always "$target_device" << EOF
-size=2M,type=21686148-6449-6E6F-744E-656564454649
+size=32M,type=21686148-6449-6E6F-744E-656564454649
 type=L
 EOF
 
@@ -46,7 +46,7 @@ mkfs.ext4 "${target_device}2"
 mount "${target_device}2" /mnt
 
 # Install the 'base' package group :
-pacstrap /mnt base sudo reflector
+pacstrap /mnt base sudo
 
 # Create an fstab file :
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -85,7 +85,7 @@ useradd -G sudoers -m "$username" -p "$(openssl passwd -1 "$password")"
 echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 
 # Install some necessary packages:
-pacman -Syu --noconfirm grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh hknockd
+pacman -Syu --noconfirm grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd
 
 # Enable ssh login with pubkey
 cat << SSHDCFG > /etc/ssh/sshd_config
@@ -119,7 +119,7 @@ SYSLOGIN
 # reflector --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
 
 # Install grub
-# grub-install --target=i386-pc /dev/sda
+grub-install --target=i386-pc /dev/sda
 # sed -i "s/^GRUB_TIMEOUT=.*$/GRUB_TIMEOUT=0/" /etc/default/grub
-# grub-mkconfig -o /boot/grub/grub.cfg
+grub-mkconfig -o /boot/grub/grub.cfg
 EOF
