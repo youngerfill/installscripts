@@ -19,7 +19,7 @@ ssh_pubkey_file=
 if [ -n "$ssh_pubkey_file" ]; then
     if [ ! -f "$ssh_pubkey_file" ]; then
         echo "ERROR: file doesn't exist: $ssh_pubkey_file"
-        return
+        exit 1
     fi
 fi
 
@@ -27,7 +27,7 @@ fi
 [ -n "$keymap" ] && loadkeys "$keymap"
 
 # Exit if no internet connection
-ping -c 1 -W 1 8.8.8.8 > /dev/null 2>&1 || return
+ping -c 1 -W 1 8.8.8.8 > /dev/null 2>&1 || exit 1
 
 # Synchronize the system clock with NTP
 timedatectl set-ntp true
@@ -82,23 +82,22 @@ echo "127.0.0.1 $hostname.localdomain $hostname" >> /etc/hosts
 # Add a non-root user, with ‘sudo’ rights
 groupadd sudoers
 useradd -G sudoers -m "$username" -p "$(openssl passwd -crypt "$password")"
-# useradd -G sudoers -m "$username" -p "$(openssl passwd -1 "$password")"
 echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 
 # Install some necessary packages:
 pacman -Syu --noconfirm grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd
 
 # Enable ssh login with pubkey
-# cat << SSHDCFG > /etc/ssh/sshd_config
-# LogLevel VERBOSE
-# PermitRootLogin no
-# PubkeyAuthentication yes
-# PasswordAuthentication no
-# AuthorizedKeysFile .ssh/authorized_keys
-# ChallengeResponseAuthentication no
-# UsePAM yes
-# AllowUsers $username
-# SSHDCFG
+cat << SSHDCFG > /etc/ssh/sshd_config
+LogLevel VERBOSE
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+AuthorizedKeysFile .ssh/authorized_keys
+ChallengeResponseAuthentication no
+UsePAM yes
+AllowUsers $username
+SSHDCFG
 
 # Put user's pubkey in the right place
 if [ -n "$ssh_pubkey_file" ]; then
