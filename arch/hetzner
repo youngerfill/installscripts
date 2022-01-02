@@ -85,7 +85,10 @@ useradd -G sudoers -m "$username" -p "$(openssl passwd -crypt "$password")"
 echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 
 # Install some necessary packages:
-pacman -Syu --noconfirm grub ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd
+pacman -Syu --noconfirm grub which man-db dhcpcd ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd reflector
+
+# Make 'vi' an alias for 'vim'
+ln -s /usr/bin/vim /usr/bin/vi
 
 # Enable ssh login with pubkey
 cat << SSHDCFG > /etc/ssh/sshd_config
@@ -120,6 +123,6 @@ SYSLOGIN
 
 # Install grub
 grub-install --target=i386-pc /dev/sda
-# sed -i "s/^GRUB_TIMEOUT=.*$/GRUB_TIMEOUT=0/" /etc/default/grub
+sed -i "s/^GRUB_TIMEOUT=.*$/GRUB_TIMEOUT=0/" /etc/default/grub
 grub-mkconfig -o /boot/grub/grub.cfg
 EOF
