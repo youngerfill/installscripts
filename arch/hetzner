@@ -85,7 +85,7 @@ useradd -G sudoers -m "$username" -p "$(openssl passwd -crypt "$password")"
 echo "%sudoers ALL=(ALL) ALL" >> /etc/sudoers
 
 # Install some necessary packages:
-pacman -Syu --noconfirm grub which man-db dhcpcd ufw git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd reflector
+pacman -Syu --noconfirm grub which man-db dhcpcd ufw rsync git vim tmux time zip unzip dialog dos2unix hwinfo openssh knockd reflector
 
 # Make 'vi' an alias for 'vim'
 ln -s /usr/bin/vim /usr/bin/vi
