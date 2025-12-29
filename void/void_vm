@@ -1,0 +1,82 @@
+#!/bin/bash
+
+. rabot-utils
+if [ "$?" -ne "0" ]; then
+  echo "$0: Error while sourcing rabot-utils" >&2
+  exit 1
+fi
+
+function showHelp
+{
+cat << DOCSTRING
+Usage: $(basename "$0") VM_NAME
+
+'$(basename "$0")' creates a QEMU virtual machine and installs Void Linux on it.
+Must be run as root.
+VM_NAME.conf must exist as a shell script with some variable definitions in it.
+The directory VM_NAME must not exist.
+DOCSTRING
+}
+
+checkForHelp $1
+minNumArgs 1 $#
+requireRoot
+
+require qemu-img
+require modprobe
+require rmmod
+require qemu-nbd
+require sfdisk
+
+vm_name="$1"
+
+# Source .conf file
+try test -f "$vm_name.conf"
+try source "$vm_name.conf"
+
+# Check if required variables are non-empty
+try test -n "$img_size"
+
+# Directory $vm_name must not exist
+###########################
+# TODO : REMOVE !!!!
+try rm -rf "$vm_name"
+###########################
+try test ! -d "$vm_name"
+
+# Create directory $vm_name and cd into it
+try mkdir -p "$vm_name"
+try cd "$vm_name"
+
+# Keep basename
+vm_name="$(basename "$vm_name")"
+
+# Create image file
+try qemu-img create -f qcow2 "$vm_name.img" "$img_size"
+
+# Enable nbd
+tru "rmmod nbd" modprobe nbd max_part=8
+
+# Connect image as network block device
+device="/dev/nbd0"
+try test ! -e "$device"
+tru "qemu-nbd --disconnect $device" qemu-nbd --connect="$device" "$vm_name.img"
+
+# Partition
+try sfdisk --label gpt --wipe always --wipe-partitions always "$device" << EOF
+size=100M,type=21686148-6449-6E6F-744E-656564454649
+type=L
+EOF
+
+# Format EFI partition
+try test -e "${device}1"
+try mkfs.fat -F32 "${device}1"
+
+# Format root partition
+try test -e "${device}2"
+try mkfs.ext4 "${device}2"
+
+# Mount root partition
+try mkdir -p "/mnt/$vm_name"
+tru "umount /mnt/$vm_name" mount "${device}2" "/mnt/$vm_name"
+
