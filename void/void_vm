@@ -26,6 +26,8 @@ require modprobe
 require rmmod
 require qemu-nbd
 require sfdisk
+require xbps-install
+require xgenfstab
 
 config_file="$1"
 
@@ -36,6 +38,11 @@ try source "$config_file"
 # Check if required variables are non-empty
 try test -n "$vm_name"
 try test -n "$img_size"
+
+# Set other variables to default values, if empty
+: ${timezone:=UTC}
+: ${username:=me}
+: ${userpwd:=$username}
 
 # Directory $vm_name must not exist
 ###########################
@@ -87,4 +94,34 @@ try mkdir -p "/mnt/$vm_name"
 try mount "${device}p2" "/mnt/$vm_name"
 defer umount "/mnt/$vm_name"
 
+# Mount EFI partition
+try mkdir -p "/mnt/$vm_name/boot/efi"
+try mount "${device}p1" "/mnt/$vm_name/boot/efi"
+defer umount "/mnt/$vm_name/boot/efi"
+
+# Install base system
+arch="x86_64"
+try mkdir -p "/mnt/$vm_name/var/db/xbps/keys"
+try cp /var/db/xbps/keys/* /mnt/var/db/xbps/keys/
+XBPS_ARCH="$arch" xbps-install -S -r /mnt base-system
+try xgenfstab -U /mnt > /mnt/etc/fstab
+
+# chroot into root directory
+xchroot /mnt/$vm_name /bin/bash << EOF
+
+# Generate locale files
+xbps-reconfigure -f glibc-locales
+
+# Set timezone
+ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
+
+# TODO: install & enable Chrony NTP service
+# TODO: dhcpd, sshd
+# TODO:
+#   - append "KEYMAP=$keymap" to /etc/rc.conf
+#       - maybe replace the entire contents
+#   - only if $keymap is not empty
+#   - for "be" layout: be-latin1
+#
+EOF
 sleep 1
