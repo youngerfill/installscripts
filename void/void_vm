@@ -9,12 +9,11 @@ fi
 function showHelp
 {
 cat << DOCSTRING
-Usage: $(basename "$0") VM_NAME
+Usage: $(basename "$0") CONFIG_FILE
 
 '$(basename "$0")' creates a QEMU virtual machine and installs Void Linux on it.
 Must be run as root.
-VM_NAME.conf must exist as a shell script with some variable definitions in it.
-The directory VM_NAME must not exist.
+CONFIG_FILE must exist as a shell script with some necessary variable definitions in it.
 DOCSTRING
 }
 
@@ -28,13 +27,14 @@ require rmmod
 require qemu-nbd
 require sfdisk
 
-vm_name="$1"
+config_file="$1"
 
-# Source .conf file
-try test -f "$vm_name.conf"
-try source "$vm_name.conf"
+# Source config file
+try test -f "$config_file"
+try source "$config_file"
 
 # Check if required variables are non-empty
+try test -n "$vm_name"
 try test -n "$img_size"
 
 # Directory $vm_name must not exist
@@ -52,15 +52,20 @@ try cd "$vm_name"
 vm_name="$(basename "$vm_name")"
 
 # Create image file
-try qemu-img create -f qcow2 "$vm_name.img" "$img_size"
+image_file="$vm_name.qcow2"
+try qemu-img create -f qcow2 "$image_file" "$img_size"
 
 # Enable nbd
-tru "rmmod nbd" modprobe nbd max_part=8
+try modprobe nbd max_part=8
+defer rmmod nbd
+defer sleep 1
+device="/dev/nbd0"
+try test -e "$device"
 
 # Connect image as network block device
-device="/dev/nbd0"
-try test ! -e "$device"
-tru "qemu-nbd --disconnect $device" qemu-nbd --connect="$device" "$vm_name.img"
+try qemu-nbd --connect="$device" "$image_file"
+defer qemu-nbd --disconnect $device
+sleep 1
 
 # Partition
 try sfdisk --label gpt --wipe always --wipe-partitions always "$device" << EOF
@@ -69,14 +74,17 @@ type=L
 EOF
 
 # Format EFI partition
-try test -e "${device}1"
-try mkfs.fat -F32 "${device}1"
+sleep 1
+try test -e "${device}p1"
+try mkfs.fat -F32 "${device}p1"
 
 # Format root partition
-try test -e "${device}2"
-try mkfs.ext4 "${device}2"
+try test -e "${device}p2"
+try mkfs.ext4 "${device}p2"
 
 # Mount root partition
 try mkdir -p "/mnt/$vm_name"
-tru "umount /mnt/$vm_name" mount "${device}2" "/mnt/$vm_name"
+try mount "${device}p2" "/mnt/$vm_name"
+defer umount "/mnt/$vm_name"
 
+sleep 1
