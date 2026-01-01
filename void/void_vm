@@ -28,6 +28,7 @@ require qemu-nbd
 require sfdisk
 require xbps-install
 require xgenfstab
+require xchroot
 
 config_file="$1"
 
@@ -44,12 +45,14 @@ try test -n "$img_size"
 : ${username:=me}
 : ${userpwd:=$username}
 
-# Directory $vm_name must not exist
-###########################
-# TODO : REMOVE !!!!
-try rm -rf "$vm_name"
-###########################
-try test ! -d "$vm_name"
+if [ ! "$reuse_image" = "true" ]; then
+    # Directory $vm_name must not exist
+    ###########################
+    # TODO : REMOVE !!!!
+    try rm -rf "$vm_name"
+    ###########################
+    try test ! -d "$vm_name"
+fi
 
 # Create directory $vm_name and cd into it
 try mkdir -p "$vm_name"
@@ -60,7 +63,9 @@ vm_name="$(basename "$vm_name")"
 
 # Create image file
 image_file="$vm_name.qcow2"
-try qemu-img create -f qcow2 "$image_file" "$img_size"
+if [ ! "$reuse_image" = "true" ]; then
+    try qemu-img create -f qcow2 "$image_file" "$img_size"
+fi
 
 # Enable nbd
 try modprobe nbd max_part=8
@@ -75,6 +80,7 @@ defer qemu-nbd --disconnect $device
 sleep 1
 
 # Partition
+if [ ! "$reuse_image" = "true" ]; then
 try sfdisk --label gpt --wipe always --wipe-partitions always "$device" << EOF
 size=100M,type=21686148-6449-6E6F-744E-656564454649
 type=L
@@ -88,6 +94,7 @@ try mkfs.fat -F32 "${device}p1"
 # Format root partition
 try test -e "${device}p2"
 try mkfs.ext4 "${device}p2"
+fi
 
 # Mount root partition
 rootdir="/mnt/$vm_name"
@@ -101,12 +108,17 @@ try mount "${device}p1" "$rootdir/boot/efi"
 defer umount "$rootdir/boot/efi"
 
 # Install base system
+# try mkdir -p "$rootdir/var/db/xbps/keys"
+# try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
+# # REPO="https://repo-default.voidlinux.org/current"
+# REPO="https://repo-fastly.voidlinux.org/current"
 arch="x86_64"
-try mkdir -p "$rootdir/var/db/xbps/keys"
-try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
-XBPS_ARCH="$arch" xbps-install -S -r "$rootdir" base-system
+# XBPS_ARCH="$arch" xbps-install -S -r "$rootdir" -R "$REPO" base-system
+if [ ! "$reuse_image" = "true" ]; then
+    XBPS_ARCH="$arch" xvoidstrap "$rootdir" base-system
 try mkdir -p "$rootdir/etc"
 try xgenfstab -U "$rootdir" > "$rootdir/etc/fstab"
+fi
 
 # chroot into root directory
 xchroot "$rootdir" /bin/bash
