@@ -107,36 +107,69 @@ try mkdir -p "$rootdir/boot/efi"
 try mount "${device}p1" "$rootdir/boot/efi"
 defer umount "$rootdir/boot/efi"
 
-# Install base system
-# try mkdir -p "$rootdir/var/db/xbps/keys"
-# try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
-# # REPO="https://repo-default.voidlinux.org/current"
-# REPO="https://repo-fastly.voidlinux.org/current"
+# Install base system & packages
 arch="x86_64"
-# XBPS_ARCH="$arch" xbps-install -S -r "$rootdir" -R "$REPO" base-system
 if [ ! "$reuse_image" = "true" ]; then
-    XBPS_ARCH="$arch" xvoidstrap "$rootdir" base-system
+    try mkdir -p "$rootdir/var/db/xbps/keys"
+    try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
+    REPO="https://repo-default.voidlinux.org/current"
+#   REPO="https://repo-fastly.voidlinux.org/current"
+    XBPS_ARCH="$arch" xbps-install -S -y -r "$rootdir" -R "$REPO" $(cat <<EOF
+base-system
+grub-x86_64-efi
+chrony xtools time tmux curl wget zip unzip moreutils dos2unix
+git lazygit vim ffmpeg fd ripgrep fzf neovim htop dialog
+base-devel clang automake autoconf python3 python3-pip go nodejs shellcheck
+lighttpd asciidoc ruby-asciidoctor hugo
+xorg xinit xclip unclutter numlockx font-inconsolata-otf font-firacode vim-x11
+libXinerama-devel libXft-devel freetype-devel fontconfig-devel harfbuzz-devel
+EOF
+)
+#    XBPS_ARCH="$arch" xvoidstrap "$rootdir" base-system
+
+# Generate fstab
 try mkdir -p "$rootdir/etc"
 try xgenfstab -U "$rootdir" > "$rootdir/etc/fstab"
 fi
 
+# Set keyboard layout
+if [ -n "$keymap" ]; then
+    echo "KEYMAP=\"$keymap\"" > "$rootdir/etc/rc.conf"
+fi
+
+# Grant sudo rights
+echo "root ALL=(ALL) ALL" > "$rootdir/etc/sudoers"
+echo "%wheel ALL=(ALL) ALL" >> "$rootdir/etc/sudoers"
+echo "%wheel ALL=NOPASSWD: /usr/bin/reboot, /usr/bin/shutdown" >> "$rootdir/etc/sudoers"
+
 # chroot into root directory
+xchroot "$rootdir" /bin/bash << EOF
+
+# Generate locale files
+xbps-reconfigure -f glibc-locales
+
+# Set timezone
+ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
+
+# Enable services
+ln -s /etc/sv/dhcpcd /etc/runit/runsvdir/default/
+ln -s /etc/sv/sshd /etc/runit/runsvdir/default/
+ln -s /etc/sv/chronyd /etc/runit/runsvdir/default/
+
+# Create user
+useradd -m "$username"
+usermod -aG wheel "$username"
+echo "$userpwd" | passwd "$username"
+
+# Set up Grub
+grub-install --target=x86_64-efi --efi-directory=/boot/efi
+
+# TODO customize Grub config and run grub-mkconfig
+
+# Finalize
+xbps-reconfigure -fa
+EOF
+
 xchroot "$rootdir" /bin/bash
-# xchroot "$rootdir" /bin/bash << EOF
-#
-# # Generate locale files
-# xbps-reconfigure -f glibc-locales
-#
-# # Set timezone
-# ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
-#
-# # TODO: install & enable Chrony NTP service
-# # TODO: dhcpd, sshd
-# # TODO:
-# #   - append "KEYMAP=$keymap" to /etc/rc.conf
-# #       - maybe replace the entire contents
-# #   - only if $keymap is not empty
-# #   - for "be" layout: be-latin1
-# #
-# EOF
-# sleep 1
+
+sleep 1
