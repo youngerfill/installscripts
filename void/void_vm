@@ -142,6 +142,7 @@ echo "root ALL=(ALL) ALL" > "$rootdir/etc/sudoers"
 echo "%wheel ALL=(ALL) ALL" >> "$rootdir/etc/sudoers"
 echo "%wheel ALL=NOPASSWD: /usr/bin/reboot, /usr/bin/shutdown" >> "$rootdir/etc/sudoers"
 
+if [ ! "$reuse_image" = "true" ]; then
 # chroot into root directory
 xchroot "$rootdir" /bin/bash << EOF
 
@@ -169,6 +170,7 @@ grub-install --target=x86_64-efi --efi-directory=/boot/efi
 # Finalize
 xbps-reconfigure -fa
 EOF
+fi
 
 xchroot "$rootdir" /bin/bash
 
