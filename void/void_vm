@@ -52,11 +52,11 @@ if [ ! "$reuse_image" = "true" ]; then
     try rm -rf "$vm_name"
     ###########################
     try test ! -d "$vm_name"
-fi
 
 # Create directory $vm_name and cd into it
 try mkdir -p "$vm_name"
 try cd "$vm_name"
+fi # reuse_image
 
 # Keep basename
 vm_name="$(basename "$vm_name")"
@@ -65,7 +65,7 @@ vm_name="$(basename "$vm_name")"
 image_file="$vm_name.qcow2"
 if [ ! "$reuse_image" = "true" ]; then
     try qemu-img create -f qcow2 "$image_file" "$img_size"
-fi
+fi # reuse_image
 
 # Enable nbd
 try modprobe nbd max_part=8
@@ -76,7 +76,7 @@ try test -e "$device"
 
 # Connect image as network block device
 try qemu-nbd --connect="$device" "$image_file"
-defer qemu-nbd --disconnect $device
+defer qemu-nbd --disconnect "$device"
 sleep 1
 
 # Partition
@@ -94,7 +94,7 @@ try mkfs.fat -F32 "${device}p1"
 # Format root partition
 try test -e "${device}p2"
 try mkfs.ext4 "${device}p2"
-fi
+fi # reuse_image
 
 # Mount root partition
 rootdir="/mnt/$vm_name"
@@ -108,8 +108,8 @@ try mount "${device}p1" "$rootdir/boot/efi"
 defer umount "$rootdir/boot/efi"
 
 # Install base system & packages
-arch="x86_64"
 if [ ! "$reuse_image" = "true" ]; then
+    arch="x86_64"
     try mkdir -p "$rootdir/var/db/xbps/keys"
     try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
     REPO="https://repo-default.voidlinux.org/current"
@@ -125,12 +125,10 @@ xorg xinit xclip unclutter numlockx font-inconsolata-otf font-firacode vim-x11
 libXinerama-devel libXft-devel freetype-devel fontconfig-devel harfbuzz-devel
 EOF
 )
-#    XBPS_ARCH="$arch" xvoidstrap "$rootdir" base-system
 
 # Generate fstab
 try mkdir -p "$rootdir/etc"
 try xgenfstab -U "$rootdir" > "$rootdir/etc/fstab"
-fi
 
 # Set keyboard layout
 if [ -n "$keymap" ]; then
@@ -138,11 +136,25 @@ if [ -n "$keymap" ]; then
 fi
 
 # Grant sudo rights
-echo "root ALL=(ALL) ALL" > "$rootdir/etc/sudoers"
-echo "%wheel ALL=(ALL) ALL" >> "$rootdir/etc/sudoers"
-echo "%wheel ALL=NOPASSWD: /usr/bin/reboot, /usr/bin/shutdown" >> "$rootdir/etc/sudoers"
+cat << SUDOERSFILE > "$rootdir/etc/sudoers"
+root ALL=(ALL) ALL
+%wheel ALL=(ALL) ALL
+%wheel ALL=NOPASSWD: /usr/bin/reboot, /usr/bin/shutdown
+SUDOERSFILE
 
-if [ ! "$reuse_image" = "true" ]; then
+# Customize Grub config
+cat << GRUBFILE > "$rootdir/etc/default/grub"
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=0
+GRUB_DISTRIBUTOR="Void"
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=4 quiet video=1920x1080"
+GRUBFILE
+
+# TODO xchroot here and see if reconf locales is needed for timezone
+#xchroot "$rootdir" /bin/bash
+
+# TODO move creation of symlinks here
+
 # chroot into root directory
 xchroot "$rootdir" /bin/bash << EOF
 
@@ -164,13 +176,12 @@ echo "$userpwd" | passwd "$username"
 
 # Set up Grub
 grub-install --target=x86_64-efi --efi-directory=/boot/efi "$device"
-
-# TODO customize Grub config and run grub-mkconfig
+grub-mkconfig -o /boot/grub/grub.cfg
 
 # Finalize
 xbps-reconfigure -fa
 EOF
-fi
+fi # reuse_image
 
 xchroot "$rootdir" /bin/bash
 
