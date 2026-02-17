@@ -53,9 +53,9 @@ if [ ! "$reuse_image" = "true" ]; then
     ###########################
     try test ! -d "$vm_name"
 
-# Create directory $vm_name and cd into it
-try mkdir -p "$vm_name"
-try cd "$vm_name"
+    # Create directory $vm_name and cd into it
+    try mkdir -p "$vm_name"
+    try cd "$vm_name"
 fi # reuse_image
 
 # Keep basename
@@ -117,14 +117,19 @@ if [ ! "$reuse_image" = "true" ]; then
     XBPS_ARCH="$arch" xbps-install -S -y -r "$rootdir" -R "$REPO" $(cat <<EOF
 base-system
 grub-x86_64-efi
-chrony xtools time tmux curl wget zip unzip moreutils dos2unix
-git lazygit vim ffmpeg fd ripgrep fzf neovim htop dialog
-base-devel clang automake autoconf python3 python3-pip go nodejs shellcheck
-lighttpd asciidoc ruby-asciidoctor hugo
-xorg xinit xclip unclutter numlockx font-inconsolata-otf font-firacode vim-x11
-libXinerama-devel libXft-devel freetype-devel fontconfig-devel harfbuzz-devel
 EOF
 )
+#     XBPS_ARCH="$arch" xbps-install -S -y -r "$rootdir" -R "$REPO" $(cat <<EOF
+# base-system
+# grub-x86_64-efi
+# chrony xtools time tmux curl wget zip unzip moreutils dos2unix
+# git lazygit vim ffmpeg fd ripgrep fzf neovim htop dialog
+# base-devel clang automake autoconf python3 python3-pip go nodejs shellcheck
+# lighttpd asciidoc ruby-asciidoctor hugo
+# xorg xinit xclip unclutter numlockx font-inconsolata-otf font-firacode vim-x11
+# libXinerama-devel libXft-devel freetype-devel fontconfig-devel harfbuzz-devel
+# EOF
+# )
 
 # Generate fstab
 try mkdir -p "$rootdir/etc"
@@ -132,23 +137,25 @@ try xgenfstab -U "$rootdir" > "$rootdir/etc/fstab"
 
 # Set keyboard layout
 if [ -n "$keymap" ]; then
-    echo "KEYMAP=\"$keymap\"" > "$rootdir/etc/rc.conf"
+cat << EOF > "$rootdir/etc/rc.conf"
+KEYMAP="$keymap"
+EOF
 fi
 
 # Grant sudo rights
-cat << SUDOERSFILE > "$rootdir/etc/sudoers"
+cat << EOF > "$rootdir/etc/sudoers"
 root ALL=(ALL) ALL
 %wheel ALL=(ALL) ALL
 %wheel ALL=NOPASSWD: /usr/bin/reboot, /usr/bin/shutdown
-SUDOERSFILE
+EOF
 
 # Customize Grub config
-cat << GRUBFILE > "$rootdir/etc/default/grub"
+cat << EOF > "$rootdir/etc/default/grub"
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=0
 GRUB_DISTRIBUTOR="Void"
 GRUB_CMDLINE_LINUX_DEFAULT="loglevel=4 quiet video=1920x1080"
-GRUBFILE
+EOF
 
 # TODO xchroot here and see if reconf locales is needed for timezone
 #xchroot "$rootdir" /bin/bash
@@ -175,11 +182,14 @@ usermod -aG wheel "$username"
 echo "$userpwd" | passwd "$username"
 
 # Set up Grub
-grub-install --target=x86_64-efi --efi-directory=/boot/efi "$device"
+echo device="$device"
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --removable "$device"
 grub-mkconfig -o /boot/grub/grub.cfg
 
 # Finalize
-xbps-reconfigure -fa
+# TODO: is -f needed?
+#xbps-reconfigure -fa
+xbps-reconfigure -a
 EOF
 fi # reuse_image
 
