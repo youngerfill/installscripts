@@ -45,27 +45,17 @@ try test -n "$img_size"
 : ${username:=me}
 : ${userpwd:=$username}
 
-if [ ! "$reuse_image" = "true" ]; then
-    # Directory $vm_name must not exist
-    ###########################
-    # TODO : REMOVE !!!!
-    try rm -rf "$vm_name"
-    ###########################
-    try test ! -d "$vm_name"
-
-    # Create directory $vm_name and cd into it
-    try mkdir -p "$vm_name"
-    try cd "$vm_name"
-fi # reuse_image
-
 # Keep basename
 vm_name="$(basename "$vm_name")"
 
-# Create image file
+# Create image file if it doesn't exist
 image_file="$vm_name.qcow2"
-if [ ! "$reuse_image" = "true" ]; then
+image_existed=false
+if [ -f "$image_file" ]; then
+    image_existed=true
+else
     try qemu-img create -f qcow2 "$image_file" "$img_size"
-fi # reuse_image
+fi
 
 # Enable nbd
 try modprobe nbd max_part=8
@@ -80,7 +70,7 @@ defer qemu-nbd --disconnect "$device"
 sleep 1
 
 # Partition
-if [ ! "$reuse_image" = "true" ]; then
+if [ "$image_existed" = false ]; then
 try sfdisk --label gpt --wipe always --wipe-partitions always "$device" << EOF
 size=100M,type=21686148-6449-6E6F-744E-656564454649
 type=L
@@ -94,7 +84,7 @@ try mkfs.fat -F32 "${device}p1"
 # Format root partition
 try test -e "${device}p2"
 try mkfs.ext4 "${device}p2"
-fi # reuse_image
+fi # image_existed
 
 # Mount root partition
 rootdir="/mnt/$vm_name"
@@ -108,7 +98,7 @@ try mount "${device}p1" "$rootdir/boot/efi"
 defer umount "$rootdir/boot/efi"
 
 # Install base system & packages
-if [ ! "$reuse_image" = "true" ]; then
+if [ "$image_existed" = false ]; then
     arch="x86_64"
     try mkdir -p "$rootdir/var/db/xbps/keys"
     try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
@@ -135,12 +125,27 @@ EOF
 try mkdir -p "$rootdir/etc"
 try xgenfstab -U "$rootdir" > "$rootdir/etc/fstab"
 
+# Set locale
+cat << EOF > "$rootdir/etc/default/libc-locales"
+en_US.UTF-8 UTF-8 
+EOF
+
 # Set keyboard layout
 if [ -n "$keymap" ]; then
 cat << EOF > "$rootdir/etc/rc.conf"
 KEYMAP="$keymap"
 EOF
 fi
+
+# Set timezone
+ln -sf "$rootdir/usr/share/zoneinfo/$timezone" "$rootdir/etc/localtime"
+
+# Initial syncing of system clock to hardware clock
+cat << EOF > "$rootdir/etc/adjtime"
+0.0 0 0
+0
+UTC
+EOF
 
 # Grant sudo rights
 cat << EOF > "$rootdir/etc/sudoers"
@@ -157,24 +162,16 @@ GRUB_DISTRIBUTOR="Void"
 GRUB_CMDLINE_LINUX_DEFAULT="loglevel=4 quiet video=1920x1080"
 EOF
 
-# TODO xchroot here and see if reconf locales is needed for timezone
-#xchroot "$rootdir" /bin/bash
-
-# TODO move creation of symlinks here
+# Enable services
+ln -s "$rootdir/etc/sv/dhcpcd" "$rootdir/etc/runit/runsvdir/default/"
+ln -s "$rootdir/etc/sv/sshd" "$rootdir/etc/runit/runsvdir/default/"
+ln -s "$rootdir/etc/sv/chronyd" "$rootdir/etc/runit/runsvdir/default/"
 
 # chroot into root directory
 xchroot "$rootdir" /bin/bash << EOF
 
-# Generate locale files
+# Generate chosen locale
 xbps-reconfigure -f glibc-locales
-
-# Set timezone
-ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
-
-# Enable services
-ln -s /etc/sv/dhcpcd /etc/runit/runsvdir/default/
-ln -s /etc/sv/sshd /etc/runit/runsvdir/default/
-ln -s /etc/sv/chronyd /etc/runit/runsvdir/default/
 
 # Create user
 useradd -m "$username"
@@ -191,8 +188,8 @@ grub-mkconfig -o /boot/grub/grub.cfg
 #xbps-reconfigure -fa
 xbps-reconfigure -a
 EOF
-fi # reuse_image
+fi # image_existed
 
-xchroot "$rootdir" /bin/bash
+# xchroot "$rootdir" /bin/bash
 
 sleep 1
