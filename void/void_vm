@@ -155,6 +155,7 @@ root ALL=(ALL) ALL
 EOF
 
 # Customize Grub config
+# TODO: remove 'video' in case of server
 cat << EOF > "$rootdir/etc/default/grub"
 GRUB_DEFAULT=0
 GRUB_TIMEOUT=0
