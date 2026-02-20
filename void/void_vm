@@ -40,19 +40,20 @@ try source "$config_file"
 try test -n "$vm_name"
 try test -n "$img_size"
 
+# Keep basename
+vm_name="$(basename "$vm_name")"
+
 # Set other variables to default values, if empty
+: ${hostname:=$vm_name}
 : ${timezone:=UTC}
 : ${username:=me}
 : ${userpwd:=$username}
 
-# Keep basename
-vm_name="$(basename "$vm_name")"
-
 # Create image file if it doesn't exist
 image_file="$vm_name.qcow2"
-image_existed=false
+image_exists=false
 if [ -f "$image_file" ]; then
-    image_existed=true
+    image_exists=true
 else
     try qemu-img create -f qcow2 "$image_file" "$img_size"
 fi
@@ -70,9 +71,9 @@ defer qemu-nbd --disconnect "$device"
 sleep 1
 
 # Partition
-if [ "$image_existed" = false ]; then
+if [ "$image_exists" = false ]; then
 try sfdisk --label gpt --wipe always --wipe-partitions always "$device" << EOF
-size=100M,type=21686148-6449-6E6F-744E-656564454649
+size=100M,type=uefi
 type=L
 EOF
 
@@ -84,7 +85,7 @@ try mkfs.fat -F32 "${device}p1"
 # Format root partition
 try test -e "${device}p2"
 try mkfs.ext4 "${device}p2"
-fi # image_existed
+fi # image_exists
 
 # Mount root partition
 rootdir="/mnt/$vm_name"
@@ -98,7 +99,7 @@ try mount "${device}p1" "$rootdir/boot/efi"
 defer umount "$rootdir/boot/efi"
 
 # Install base system & packages
-if [ "$image_existed" = false ]; then
+if [ "$image_exists" = false ]; then
     arch="x86_64"
     try mkdir -p "$rootdir/var/db/xbps/keys"
     try cp /var/db/xbps/keys/* "$rootdir/var/db/xbps/keys/"
@@ -107,19 +108,15 @@ if [ "$image_existed" = false ]; then
     XBPS_ARCH="$arch" xbps-install -S -y -r "$rootdir" -R "$REPO" $(cat <<EOF
 base-system
 grub-x86_64-efi
+sudo
+chrony xtools time tmux curl wget zip unzip moreutils dos2unix
+git lazygit vim ffmpeg fd ripgrep fzf neovim htop dialog
+base-devel clang automake autoconf python3 python3-pip go nodejs shellcheck
+lighttpd asciidoc ruby-asciidoctor hugo
+xorg xinit xclip unclutter numlockx font-inconsolata-otf font-firacode vim-x11
+libXinerama-devel libXft-devel freetype-devel fontconfig-devel harfbuzz-devel
 EOF
 )
-#     XBPS_ARCH="$arch" xbps-install -S -y -r "$rootdir" -R "$REPO" $(cat <<EOF
-# base-system
-# grub-x86_64-efi
-# chrony xtools time tmux curl wget zip unzip moreutils dos2unix
-# git lazygit vim ffmpeg fd ripgrep fzf neovim htop dialog
-# base-devel clang automake autoconf python3 python3-pip go nodejs shellcheck
-# lighttpd asciidoc ruby-asciidoctor hugo
-# xorg xinit xclip unclutter numlockx font-inconsolata-otf font-firacode vim-x11
-# libXinerama-devel libXft-devel freetype-devel fontconfig-devel harfbuzz-devel
-# EOF
-# )
 
 # Generate fstab
 try mkdir -p "$rootdir/etc"
@@ -138,7 +135,12 @@ EOF
 fi
 
 # Set timezone
-ln -sf "$rootdir/usr/share/zoneinfo/$timezone" "$rootdir/etc/localtime"
+ln -sf "/usr/share/zoneinfo/$timezone" "$rootdir/etc/localtime"
+
+# Write hostname
+cat << EOF > "$rootdir/etc/hostname"
+$hostname
+EOF
 
 # Initial syncing of system clock to hardware clock
 cat << EOF > "$rootdir/etc/adjtime"
@@ -148,7 +150,9 @@ UTC
 EOF
 
 # Grant sudo rights
-cat << EOF > "$rootdir/etc/sudoers"
+try mkdir -p "$rootdir/etc/sudoers.d/"
+cat << EOF > "$rootdir/etc/sudoers.d/wheel"
+Defaults lecture = never
 root ALL=(ALL) ALL
 %wheel ALL=(ALL) ALL
 %wheel ALL=NOPASSWD: /usr/bin/reboot, /usr/bin/shutdown
@@ -164,9 +168,12 @@ GRUB_CMDLINE_LINUX_DEFAULT="loglevel=4 quiet video=1920x1080"
 EOF
 
 # Enable services
-ln -s "$rootdir/etc/sv/dhcpcd" "$rootdir/etc/runit/runsvdir/default/"
-ln -s "$rootdir/etc/sv/sshd" "$rootdir/etc/runit/runsvdir/default/"
-ln -s "$rootdir/etc/sv/chronyd" "$rootdir/etc/runit/runsvdir/default/"
+# TODO dhcpcd needed on VPS?
+sv_target="$rootdir/etc/runit/runsvdir/default"
+try mkdir -p "$sv_target"
+for service in dhcpcd sshd chronyd; do
+    ln -sf "/etc/sv/$service" "$sv_target/"
+done
 
 # chroot into root directory
 xchroot "$rootdir" /bin/bash << EOF
@@ -175,9 +182,10 @@ xchroot "$rootdir" /bin/bash << EOF
 xbps-reconfigure -f glibc-locales
 
 # Create user
-useradd -m "$username"
-usermod -aG wheel "$username"
-echo "$userpwd" | passwd "$username"
+# TODO: remove all groups except 'wheel' in case of server
+useradd -m -s /bin/bash "$username"
+usermod -aG wheel,video,audio,input,storage "$username"
+echo "$username:$userpwd" | chpasswd
 
 # Set up Grub
 echo device="$device"
@@ -189,7 +197,7 @@ grub-mkconfig -o /boot/grub/grub.cfg
 #xbps-reconfigure -fa
 xbps-reconfigure -a
 EOF
-fi # image_existed
+fi # image_exists
 
 # xchroot "$rootdir" /bin/bash
 
